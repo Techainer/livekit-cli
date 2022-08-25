@@ -29,10 +29,7 @@ var (
 			Category: "Simulate",
 			Flags: []cli.Flag{
 				urlFlag,
-				roomFlag,
-				identityFlag,
-				apiKeyFlag,
-				secretFlag,
+				apiTokenFlag,
 				&cli.BoolFlag{
 					Name:  "publish-demo",
 					Usage: "publish demo video as a loop",
@@ -74,12 +71,7 @@ func joinRoom(c *cli.Context) error {
 			logger.Infow("room metadata changed", "metadata", metadata)
 		},
 	}
-	room, err := lksdk.ConnectToRoom(c.String("url"), lksdk.ConnectInfo{
-		APIKey:              c.String("api-key"),
-		APISecret:           c.String("api-secret"),
-		RoomName:            c.String("room"),
-		ParticipantIdentity: c.String("identity"),
-	}, roomCB)
+	room, err := lksdk.ConnectToRoomWithToken(c.String("url"), c.String("api-token"), roomCB)
 	if err != nil {
 		return err
 	}

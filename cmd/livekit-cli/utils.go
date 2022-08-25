@@ -22,6 +22,11 @@ var (
 		EnvVars: []string{"LIVEKIT_URL"},
 		Value:   "http://localhost:7880",
 	}
+	apiTokenFlag = &cli.StringFlag{
+		Name:     "api-token",
+		EnvVars:  []string{"LIVEKIT_API_TOKEN"},
+		Required: true,
+	}
 	apiKeyFlag = &cli.StringFlag{
 		Name:     "api-key",
 		EnvVars:  []string{"LIVEKIT_API_KEY"},
