@@ -76,7 +76,7 @@ func joinRoom(c *cli.Context) error {
 			logger.Infow("room metadata changed", "metadata", metadata)
 		},
 	}
-	room, err := lksdk.ConnectToRoomWithToken(c.String("url"), c.String("api-token"), roomCB)
+	room, err := lksdk.ConnectToRoomWithToken(pc.URL, c.String("api-token"), roomCB)
 	if err != nil {
 		return err
 	}
