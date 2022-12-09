@@ -27,9 +27,9 @@ var (
 			Usage:    "Joins a room as a participant",
 			Action:   joinRoom,
 			Category: "Simulate",
-			Flags: []cli.Flag{
-				urlFlag,
-				apiTokenFlag,
+			Flags: withDefaultFlags(
+				roomFlag,
+				identityFlag,
 				&cli.BoolFlag{
 					Name:  "publish-demo",
 					Usage: "publish demo video as a loop",
@@ -44,7 +44,7 @@ var (
 					Name:  "fps",
 					Usage: "if video files are published, indicates FPS of video",
 				},
-			},
+			),
 		},
 	}
 )
@@ -52,6 +52,11 @@ var (
 const mimeDelimiter = "://"
 
 func joinRoom(c *cli.Context) error {
+	pc, err := loadProjectDetails(c)
+	if err != nil {
+		return err
+	}
+
 	roomCB := &lksdk.RoomCallback{
 		ParticipantCallback: lksdk.ParticipantCallback{
 			OnDataReceived: func(data []byte, rp *lksdk.RemoteParticipant) {
@@ -77,7 +82,7 @@ func joinRoom(c *cli.Context) error {
 	}
 	defer room.Disconnect()
 
-	logger.Infow("connected to room", "room", room.Name)
+	logger.Infow("connected to room", "room", room.Name())
 
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -117,7 +122,7 @@ func handlePublish(room *lksdk.Room, name string, fps float64) error {
 func publishDemo(room *lksdk.Room) error {
 	var tracks []*lksdk.LocalSampleTrack
 
-	loopers, err := provider2.CreateLoopers("high", "", true)
+	loopers, err := provider2.CreateVideoLoopers("high", "", true)
 	if err != nil {
 		return err
 	}

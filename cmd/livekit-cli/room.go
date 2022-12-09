@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
-	"github.com/ggwhite/go-masker"
 	"github.com/urfave/cli/v2"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go"
@@ -21,115 +22,87 @@ var (
 			Before:   createRoomClient,
 			Action:   createRoom,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				&cli.StringFlag{
 					Name:     "name",
 					Usage:    "name of the room",
 					Required: true,
 				},
 				&cli.StringFlag{
-					Name:     "recording-config",
-					Usage:    "path to json recording config file",
+					Name:     "room-egress-file",
+					Usage:    "RoomCompositeRequest json file (see examples/room-composite-file.json)",
 					Required: false,
 				},
-			},
+				&cli.StringFlag{
+					Name:     "track-egress-file",
+					Usage:    "AutoTrackEgress json file (see examples/auto-track-egress.json)",
+					Required: false,
+				},
+			),
 		},
 		{
 			Name:     "list-rooms",
 			Before:   createRoomClient,
 			Action:   listRooms,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
-			},
+			Flags:    withDefaultFlags(),
 		},
 		{
 			Name:     "delete-room",
 			Before:   createRoomClient,
 			Action:   deleteRoom,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				roomFlag,
-			},
+			),
 		},
 		{
 			Name:     "update-room-metadata",
 			Before:   createRoomClient,
 			Action:   updateRoomMetadata,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				roomFlag,
 				&cli.StringFlag{
 					Name: "metadata",
 				},
-			},
+			),
 		},
 		{
 			Name:     "list-participants",
 			Before:   createRoomClient,
 			Action:   listParticipants,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				roomFlag,
-			},
+			),
 		},
 		{
 			Name:     "get-participant",
 			Before:   createRoomClient,
 			Action:   getParticipant,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				roomFlag,
 				identityFlag,
-			},
+			),
 		},
 		{
 			Name:     "remove-participant",
 			Before:   createRoomClient,
 			Action:   removeParticipant,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				roomFlag,
 				identityFlag,
-			},
+			),
 		},
 		{
 			Name:     "update-participant",
 			Before:   createRoomClient,
 			Action:   updateParticipant,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				roomFlag,
 				identityFlag,
 				&cli.StringFlag{
@@ -139,18 +112,14 @@ var (
 					Name:  "permissions",
 					Usage: "JSON describing participant permissions (existing values for unset fields)",
 				},
-			},
+			),
 		},
 		{
 			Name:     "mute-track",
 			Before:   createRoomClient,
 			Action:   muteTrack,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				roomFlag,
 				identityFlag,
 				&cli.StringFlag{
@@ -162,18 +131,14 @@ var (
 					Name:  "muted",
 					Usage: "set to true to mute, false to unmute",
 				},
-			},
+			),
 		},
 		{
 			Name:     "update-subscriptions",
 			Before:   createRoomClient,
 			Action:   updateSubscriptions,
 			Category: roomCategory,
-			Flags: []cli.Flag{
-				urlFlag,
-				apiKeyFlag,
-				secretFlag,
-				verboseFlag,
+			Flags: withDefaultFlags(
 				roomFlag,
 				identityFlag,
 				&cli.StringSliceFlag{
@@ -185,7 +150,7 @@ var (
 					Name:  "subscribe",
 					Usage: "set to true to subscribe, otherwise it'll unsubscribe",
 				},
-			},
+			),
 		},
 	}
 
@@ -193,25 +158,48 @@ var (
 )
 
 func createRoomClient(c *cli.Context) error {
-	url := c.String("url")
-	apiKey := c.String("api-key")
-	apiSecret := c.String("api-secret")
-
-	if c.Bool("verbose") {
-		fmt.Printf("creating client to %s, with api-key: %s, secret: %s\n",
-			url,
-			masker.ID(apiKey),
-			masker.ID(apiSecret))
+	pc, err := loadProjectDetails(c)
+	if err != nil {
+		return err
 	}
 
-	roomClient = lksdk.NewRoomServiceClient(url, apiKey, apiSecret)
+	roomClient = lksdk.NewRoomServiceClient(pc.URL, pc.APIKey, pc.APISecret)
 	return nil
 }
 
 func createRoom(c *cli.Context) error {
-	room, err := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
+	req := &livekit.CreateRoomRequest{
 		Name: c.String("name"),
-	})
+	}
+
+	if roomEgressFile := c.String("room-egress-file"); roomEgressFile != "" {
+		roomEgress := &livekit.RoomCompositeEgressRequest{}
+		b, err := os.ReadFile(roomEgressFile)
+		if err != nil {
+			return err
+		}
+		if err = protojson.Unmarshal(b, roomEgress); err != nil {
+			return err
+		}
+		req.Egress = &livekit.RoomEgress{Room: roomEgress}
+	}
+
+	if trackEgressFile := c.String("track-egress-file"); trackEgressFile != "" {
+		trackEgress := &livekit.AutoTrackEgress{}
+		b, err := os.ReadFile(trackEgressFile)
+		if err != nil {
+			return err
+		}
+		if err = protojson.Unmarshal(b, trackEgress); err != nil {
+			return err
+		}
+		if req.Egress == nil {
+			req.Egress = &livekit.RoomEgress{}
+		}
+		req.Egress.Tracks = trackEgress
+	}
+
+	room, err := roomClient.CreateRoom(context.Background(), req)
 	if err != nil {
 		return err
 	}
@@ -229,7 +217,7 @@ func listRooms(c *cli.Context) error {
 		fmt.Println("there are no active rooms")
 	}
 	for _, rm := range res.Rooms {
-		fmt.Printf("%s\t%s\n", rm.Sid, rm.Name)
+		fmt.Printf("%s\t%s\t%d participants\n", rm.Sid, rm.Name, rm.NumParticipants)
 	}
 	return nil
 }
